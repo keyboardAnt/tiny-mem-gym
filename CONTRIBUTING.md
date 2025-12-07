@@ -49,8 +49,9 @@ pytest
 - Build and publish with `uv`:
 
 ```bash
-uv build
+uv build --no-sources
 uv publish
+
 ```
 
 

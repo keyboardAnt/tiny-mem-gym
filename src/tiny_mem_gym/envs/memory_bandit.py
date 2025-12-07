@@ -23,7 +23,7 @@ class TinyMemoryBanditEnv(gym.Env):
     - a normalized timestep
     """
 
-    metadata = {"render_modes": []}
+    metadata = {"render_modes": ["rgb_array"]}
 
     def __init__(
         self,
@@ -100,6 +100,46 @@ class TinyMemoryBanditEnv(gym.Env):
         }
         return obs, float(reward), terminated, truncated, info
 
+    # Rendering -----------------------------------------------------------------
+
+    def render(self, mode: str = "rgb_array", **kwargs: Any) -> np.ndarray:
+        """Render a tiny visualization of the current observation.
+
+        The visualization is intentionally simple and derived only from the
+        current observation vector, so it does not reveal any hidden state.
+        """
+        del kwargs  # unused
+        if mode != "rgb_array":
+            raise ValueError("Only 'rgb_array' render mode is supported.")
+
+        obs = self._get_obs()
+        cue = obs[: self.n_arms]
+        last_reward = float(obs[self.n_arms])
+        progress = float(obs[self.n_arms + 1])
+
+        height = 64
+        width_per_arm = 32
+        width = self.n_arms * width_per_arm
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Draw arms as vertical bars whose brightness encodes the cue.
+        for i in range(self.n_arms):
+            x0 = i * width_per_arm
+            x1 = x0 + width_per_arm
+            intensity = int(255 * float(cue[i]))
+            frame[:, x0:x1, 1] = intensity  # green channel
+
+        # Draw a horizontal progress bar at the bottom.
+        prog_width = int(width * max(0.0, min(1.0, progress)))
+        if prog_width > 0:
+            frame[-5:, :prog_width, :] = np.array([0, 0, 255], dtype=np.uint8)
+
+        # Flash red at the top when the last reward was positive.
+        if last_reward > 0.0:
+            frame[:5, :, :] = np.array([255, 0, 0], dtype=np.uint8)
+
+        return frame
+
     def _get_obs(self) -> np.ndarray:
         """Construct the current observation vector."""
         cue = np.zeros(self.n_arms, dtype=np.float32)
@@ -109,9 +149,14 @@ class TinyMemoryBanditEnv(gym.Env):
         obs = np.zeros(self.observation_space.shape, dtype=np.float32)
         obs[: self.n_arms] = cue
         obs[self.n_arms] = np.float32(self._last_reward)
-        obs[self.n_arms + 1] = np.float32(
-            0.0 if self.max_episode_steps <= 1 else self._timestep / (self.max_episode_steps - 1)
-        )
+        if self.max_episode_steps <= 0:
+            progress = 0.0
+        else:
+            # Clamp progress to [0, 1] so observations always stay within the
+            # declared Box bounds.
+            clamped_t = min(self._timestep, self.max_episode_steps)
+            progress = clamped_t / float(self.max_episode_steps)
+        obs[self.n_arms + 1] = np.float32(progress)
         return obs
 
 

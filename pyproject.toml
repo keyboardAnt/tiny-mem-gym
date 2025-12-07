@@ -7,7 +7,7 @@ name = "tiny-mem-gym"
 version = "0.1.0"
 description = "A tiny collection of Gymnasium-compatible environments focused on memory and partial observability."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
   { name = "Tiny Mem Gym Developers" }
@@ -23,10 +23,16 @@ dev = [
 ]
 viz = [
   "matplotlib>=3.5",
+  "pygame>=2.0",
 ]
 
 [project.urls]
 Homepage = "https://example.com/tiny-mem-gym"
 Repository = "https://example.com/tiny-mem-gym"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
 
 

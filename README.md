@@ -61,4 +61,33 @@ env = gym.make("TinyMem-Bandit-v0")
 
 See the examples under `examples/` and the docstrings in `tiny_mem_gym.envs` for more details.
 
+### Testing
+
+Run the pytest-based smoke tests:
+
+```bash
+uv run pytest
+```
+
+### Building and publishing
+
+To build distributions with `uv`:
+
+```bash
+uv build
+```
+
+To publish to the configured index (for example, PyPI):
+
+```bash
+uv publish
+```
+
+Before publishing, update the package version using:
+
+```bash
+uv version --bump patch  # or minor / major
+```
+
+
 
