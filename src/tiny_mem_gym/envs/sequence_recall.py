@@ -72,6 +72,7 @@ class SequenceRecallEnv(gym.Env):
         self._sequence: np.ndarray | None = None
         self._timestep: int = 0
         self._cumulative_reward: float = 0.0
+        self._last_reward: float = 0.0
 
     def reset(
         self, *, seed: int | None = None, options: Dict[str, Any] | None = None
@@ -84,6 +85,7 @@ class SequenceRecallEnv(gym.Env):
         )
         self._timestep = 0
         self._cumulative_reward = 0.0
+        self._last_reward = 0.0
 
         obs = self._get_obs()
         info = {
@@ -124,6 +126,7 @@ class SequenceRecallEnv(gym.Env):
                 predicted_match = bool(int(action) == 1)
                 reward = 1.0 if predicted_match == is_match else 0.0
 
+        self._last_reward = reward
         self._cumulative_reward += reward
         self._timestep += 1
 
@@ -160,9 +163,9 @@ class SequenceRecallEnv(gym.Env):
 
         # Background color encodes phase: blue for presentation, yellow for query.
         if phase_flag < 0.5:
-            frame[:, :, :] = np.array([0, 0, 40], dtype=np.uint8)
+            frame[:, :, :] = np.array([0, 0, 60], dtype=np.uint8)
         else:
-            frame[:, :, :] = np.array([40, 40, 0], dtype=np.uint8)
+            frame[:, :, :] = np.array([80, 80, 0], dtype=np.uint8)
 
         # Color palette for symbols (cycled).
         palette = [
@@ -176,8 +179,24 @@ class SequenceRecallEnv(gym.Env):
             x0 = i * width_per_symbol
             x1 = x0 + width_per_symbol
             color = palette[i % len(palette)]
+            # Draw all symbols as faint bars so humans know how many options
+            # there are, and highlight the current one strongly.
+            frame[12:-12, x0 + 6 : x1 - 6, :] = (color * 0.2).astype(np.uint8)
             if i == symbol_idx:
                 frame[8:-8, x0 + 4 : x1 - 4, :] = color
+
+        # Add a feedback strip at the bottom: bright green when last answer was
+        # correct, dark red otherwise.
+        if self._last_reward > 0.0:
+            frame[-6:, :, :] = np.array([0, 200, 0], dtype=np.uint8)
+        else:
+            frame[-6:, :, :] = np.array([80, 0, 0], dtype=np.uint8)
+
+        # Simple progress indicator at the top based on timestep.
+        progress = min(1.0, self._timestep / float(self.max_episode_steps or 1))
+        prog_width = int(width * progress)
+        if prog_width > 0:
+            frame[:4, :prog_width, :] = np.array([255, 255, 255], dtype=np.uint8)
 
         return frame
 

@@ -57,6 +57,7 @@ class TinyMemoryBanditEnv(gym.Env):
         self._timestep: int = 0
         self._last_reward: float = 0.0
         self._cumulative_reward: float = 0.0
+        self._last_action: int | None = None
 
     def reset(
         self, *, seed: int | None = None, options: Dict[str, Any] | None = None
@@ -68,6 +69,7 @@ class TinyMemoryBanditEnv(gym.Env):
         self._timestep = 0
         self._last_reward = 0.0
         self._cumulative_reward = 0.0
+        self._last_action = None
 
         obs = self._get_obs()
         info = {
@@ -85,7 +87,8 @@ class TinyMemoryBanditEnv(gym.Env):
 
         terminated = False
 
-        reward = 1.0 if int(action) == int(self._rewarding_arm) else 0.0
+        self._last_action = int(action)
+        reward = 1.0 if self._last_action == int(self._rewarding_arm) else 0.0
         self._last_reward = reward
         self._cumulative_reward += reward
         self._timestep += 1
@@ -129,14 +132,27 @@ class TinyMemoryBanditEnv(gym.Env):
             intensity = int(255 * float(cue[i]))
             frame[:, x0:x1, 1] = intensity  # green channel
 
+            # Highlight the last chosen arm with a blue border to make
+            # interaction more obvious for humans.
+            if self._last_action is not None and i == self._last_action:
+                frame[:5, x0:x1, :] = np.array([0, 0, 255], dtype=np.uint8)
+                frame[-5:, x0:x1, :] = np.array([0, 0, 255], dtype=np.uint8)
+
         # Draw a horizontal progress bar at the bottom.
         prog_width = int(width * max(0.0, min(1.0, progress)))
         if prog_width > 0:
             frame[-5:, :prog_width, :] = np.array([0, 0, 255], dtype=np.uint8)
 
-        # Flash red at the top when the last reward was positive.
+        # Flash green strip in the middle when the last reward was positive,
+        # and red when it was zero, so human players instantly see the outcome.
         if last_reward > 0.0:
-            frame[:5, :, :] = np.array([255, 0, 0], dtype=np.uint8)
+            frame[height // 2 - 2 : height // 2 + 2, :, :] = np.array(
+                [0, 255, 0], dtype=np.uint8
+            )
+        else:
+            frame[height // 2 - 2 : height // 2 + 2, :, :] = np.array(
+                [120, 0, 0], dtype=np.uint8
+            )
 
         return frame
 
