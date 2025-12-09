@@ -13,6 +13,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import pygame
 
+# pygame stubs are incomplete; silence missing-member warnings for init/quit
+# pylint: disable=no-member
+
 from tiny_mem_gym.drawing import (
     RetroRenderer,
     COLOR_NEON_GREEN,
@@ -166,6 +169,7 @@ class DungeonEscapeEnv(gym.Env):
         reward = 0
         terminated = False
         truncated = False
+        outcome = "running"
         
         self.timer += 1
         
@@ -183,13 +187,18 @@ class DungeonEscapeEnv(gym.Env):
                 truncated = True
                 self.game_over = True
                 self.message = "TIMEOUT"
+                outcome = "timeout"
             
             # Movement
             dr, dc = 0, 0
-            if action == 0: dr = -1
-            elif action == 1: dc = 1
-            elif action == 2: dr = 1
-            elif action == 3: dc = -1
+            if action == 0:
+                dr = -1
+            elif action == 1:
+                dc = 1
+            elif action == 2:
+                dr = 1
+            elif action == 3:
+                dc = -1
             # action == 4 is intentional wait/no-op
             
             r, c = self.agent_pos
@@ -206,25 +215,31 @@ class DungeonEscapeEnv(gym.Env):
                     terminated = True  # Trap = Die
                     self.game_over = True
                     self.message = "TRAPPED"
+                    outcome = "lose"
                 elif tile == self.EXIT:
                     reward = 10.0
                     terminated = True
                     self.agent_pos = [nr, nc]
                     self.game_over = True
                     self.message = "ESCAPED!"
+                    outcome = "win"
                 else:
                     self.agent_pos = [nr, nc]
                     self.trail.append((nr, nc))
                     reward = -0.01  # Small step penalty to encourage speed
             else:
-                 # Out of bounds behaves like a wall bump
-                 reward = -0.1
-                 self.message = "BUMPED WALL"
+                # Out of bounds behaves like a wall bump
+                reward = -0.1
+                self.message = "BUMPED WALL"
 
         if self.render_mode == "human":
             self.render()
             
-        return self._get_obs(), reward, terminated, truncated, {"success": reward > 1.0}
+        info = {
+            "success": outcome == "win",
+            "outcome": outcome,
+        }
+        return self._get_obs(), reward, terminated, truncated, info
 
     def _get_obs(self):
         # Shape: (H, W, 4) -> Walls, Traps, Agent, Exit
@@ -273,7 +288,8 @@ class DungeonEscapeEnv(gym.Env):
         return obs
 
     def render(self):
-        if self.render_mode is None: return
+        if self.render_mode is None:
+            return
         
         game_size = 600
         sidebar_width = 250
@@ -283,7 +299,7 @@ class DungeonEscapeEnv(gym.Env):
             self.renderer = RetroRenderer(total_width, game_size, "Dungeon Escape")
             
         if self.render_mode == "human" and not self.window:
-            pygame.init()
+            pygame.init()  # type: ignore[attr-defined]
             pygame.display.init()
             self.window = pygame.display.set_mode((total_width, game_size))
             pygame.display.set_caption("Dungeon Escape")
@@ -318,10 +334,10 @@ class DungeonEscapeEnv(gym.Env):
                         self.renderer.draw_box(rect, COLOR_GRID, filled=True)
                         pygame.draw.rect(self.renderer.surface, COLOR_NEON_AMBER, rect, 1)
                     elif tile == self.TRAP:
-                         self.renderer.draw_text("X", x + cell_size//2, y + cell_size//2, COLOR_RED, center=True, size=int(cell_size*0.8))
+                        self.renderer.draw_text("X", x + cell_size//2, y + cell_size//2, COLOR_RED, center=True, size=int(cell_size*0.8))
                     elif tile == self.EXIT:
-                         self.renderer.draw_box(rect, COLOR_NEON_GREEN, filled=True, width=2)
-                         self.renderer.draw_text("EXIT", x + cell_size//2, y + cell_size//2, COLOR_WHITE, center=True, size=int(cell_size*0.3))
+                        self.renderer.draw_box(rect, COLOR_NEON_GREEN, filled=True, width=2)
+                        self.renderer.draw_text("EXIT", x + cell_size//2, y + cell_size//2, COLOR_WHITE, center=True, size=int(cell_size*0.3))
                 
                 if is_agent:
                     # Draw Agent
@@ -337,14 +353,14 @@ class DungeonEscapeEnv(gym.Env):
 
         # UI Overlay in Game Area
         if self.game_over:
-             color = COLOR_NEON_GREEN if "ESCAPED" in self.message else COLOR_RED
-             self.renderer.draw_text(self.message, game_size//2, 30, color, center=True, size=50)
+            color = COLOR_NEON_GREEN if "ESCAPED" in self.message else COLOR_RED
+            self.renderer.draw_text(self.message, game_size//2, 30, color, center=True, size=50)
         elif self.phase == "mem":
             time_left = max(0, self.memorization_time - self.timer)
             self.renderer.draw_text(f"MEMORIZE! {time_left}", game_size//2, 30, COLOR_NEON_PINK, center=True, size=40)
         else:
-             steps_left = max(0, self.max_steps - self.timer)
-             self.renderer.draw_text(f"ESCAPE! {steps_left}", game_size//2, 30, COLOR_NEON_GREEN, center=True, size=40)
+            steps_left = max(0, self.max_steps - self.timer)
+            self.renderer.draw_text(f"ESCAPE! {steps_left}", game_size//2, 30, COLOR_NEON_GREEN, center=True, size=40)
 
         # Sidebar
         instructions = [
@@ -363,7 +379,8 @@ class DungeonEscapeEnv(gym.Env):
         # Infer level from grid size?
         # Base size 7. Level = size - 6 approx.
         level = self.grid_size - 6
-        if level < 1: level = 1
+        if level < 1:
+            level = 1
         
         self.renderer.draw_sidebar(game_size, sidebar_width, instructions, controls, level=level)
              
@@ -380,5 +397,5 @@ class DungeonEscapeEnv(gym.Env):
     def close(self):
         if self.window:
             pygame.display.quit()
-            pygame.quit()
+            pygame.quit()  # type: ignore[attr-defined]
             self.window = None

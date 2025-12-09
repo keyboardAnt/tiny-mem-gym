@@ -16,8 +16,9 @@ def test_dungeon_escape():
     assert env.phase == "act"
     
     # Basic movement
-    obs, _, _, _, _ = env.step(1) # Right
+    obs, _, _, _, info = env.step(1) # Right
     assert env.observation_space.contains(obs)
+    assert info["outcome"] in {"running", "win", "lose", "timeout"}
     
     # Test Render
     frame = env.render()
@@ -32,11 +33,12 @@ def test_memory_racer():
     
     # Run for a bit
     for _ in range(10):
-        obs, _, terminated, _, _ = env.step(1) # Stay
+        obs, _, terminated, _, info = env.step(1) # Stay
         if terminated:
             break
         
     assert not terminated
+    assert info["outcome"] in {"running", "win", "lose", "timeout"}
     
     # Test Render
     frame = env.render()
@@ -58,10 +60,11 @@ def test_cyber_hacking():
     
     # We can peek at sequence for test
     target = env.sequence[0]
-    _, reward, terminated, _, _ = env.step(target)
+    _, reward, terminated, _, info = env.step(target)
     
     assert reward == 1.0
     assert not terminated
+    assert info["outcome"] in {"running", "win", "lose", "timeout"}
     
     # Test Render
     frame = env.render()

@@ -11,6 +11,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import pygame
 
+# pygame does not ship precise stubs; suppress attribute warnings for init/quit
+# pylint: disable=no-member
+
 from tiny_mem_gym.drawing import (
     RetroRenderer,
     COLOR_GRID,
@@ -103,6 +106,7 @@ class CyberHackingEnv(gym.Env):
         reward = 0
         terminated = False
         truncated = False
+        outcome = "running"
         
         if self.phase == "watch":
             self.watch_timer += 1
@@ -115,6 +119,7 @@ class CyberHackingEnv(gym.Env):
                 truncated = True
                 self.game_over = True
                 self.message = "TIMEOUT"
+                outcome = "timeout"
             
             if not truncated:
                 expected = self.sequence[self.current_step]
@@ -126,16 +131,22 @@ class CyberHackingEnv(gym.Env):
                         reward = 10.0  # Bonus
                         self.game_over = True
                         self.message = "HACKED!"
+                        outcome = "win"
                 else:
                     reward = -1.0
                     terminated = True
                     self.game_over = True
                     self.message = "DENIED"
+                    outcome = "lose"
 
         if self.render_mode == "human":
             self.render()
             
-        return self._get_obs(), reward, terminated, truncated, {"success": reward > 5.0}
+        info = {
+            "success": outcome == "win",
+            "outcome": outcome,
+        }
+        return self._get_obs(), reward, terminated, truncated, info
 
     def _get_obs(self):
         obs = np.zeros((self.grid_size, self.grid_size, 2), dtype=np.float32)
@@ -168,11 +179,12 @@ class CyberHackingEnv(gym.Env):
     def close(self):
         if self.window:
             pygame.display.quit()
-            pygame.quit()
+            pygame.quit()  # type: ignore[attr-defined]
             self.window = None
 
     def render(self):
-        if self.render_mode is None: return
+        if self.render_mode is None:
+            return
         
         game_size = 512
         sidebar_width = 250
@@ -182,7 +194,7 @@ class CyberHackingEnv(gym.Env):
             self.renderer = RetroRenderer(total_width, game_size, "Cyber Breach")
             
         if self.render_mode == "human" and not self.window:
-            pygame.init()
+            pygame.init()  # type: ignore[attr-defined]
             pygame.display.init()
             self.window = pygame.display.set_mode((total_width, game_size))
             pygame.display.set_caption("Cyber Breach")

@@ -11,6 +11,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import pygame
 
+# pygame lacks complete stubs; silence missing-member complaints for init/quit/SRCALPHA
+# pylint: disable=no-member
+
 from tiny_mem_gym.drawing import (
     RetroRenderer,
     COLOR_NEON_PINK,
@@ -91,10 +94,12 @@ class MemoryRacerEnv(gym.Env):
         reward = 0
         terminated = False
         truncated = False
+        outcome = "running"
         
         if self.timer >= self.max_steps:
             truncated = True
             self.game_over = True
+            outcome = "timeout"
         
         if not (terminated or truncated):
             self.timer += 1
@@ -124,6 +129,7 @@ class MemoryRacerEnv(gym.Env):
                         reward = -10.0
                         terminated = True
                         self.game_over = True
+                        outcome = "lose"
                     
                     # Entering memory zone? Capture ghost mark for the lane
                     visible_threshold = self.obs_depth // 2
@@ -148,14 +154,16 @@ class MemoryRacerEnv(gym.Env):
             
             if not terminated:
                 reward = 0.1
+                outcome = "running"
         
         if self.render_mode == "human":
             self.render()
             
         info = {
-            "success": bool(truncated and not terminated),
+            "success": outcome == "timeout" and not terminated,
             "distance": self.timer,
             "collided": terminated,
+            "outcome": outcome,
         }
         return self._get_obs(), reward, terminated, truncated, info
 
@@ -184,11 +192,12 @@ class MemoryRacerEnv(gym.Env):
     def close(self):
         if self.window:
             pygame.display.quit()
-            pygame.quit()
+            pygame.quit()  # type: ignore[attr-defined]
             self.window = None
 
     def render(self):
-        if self.render_mode is None: return
+        if self.render_mode is None:
+            return
         
         game_width = 400
         game_height = 600
@@ -199,7 +208,7 @@ class MemoryRacerEnv(gym.Env):
             self.renderer = RetroRenderer(total_width, game_height, "Memory Racer")
             
         if self.render_mode == "human" and not self.window:
-            pygame.init()
+            pygame.init()  # type: ignore[attr-defined]
             pygame.display.init()
             self.window = pygame.display.set_mode((total_width, game_height))
             pygame.display.set_caption("Memory Racer")
@@ -271,7 +280,7 @@ class MemoryRacerEnv(gym.Env):
         memory_overlay_h = game_height - horizon_y
         if memory_overlay_h > 0:
             # Subtle translucent overlay for the hidden/remembered zone
-            overlay = pygame.Surface((game_width, memory_overlay_h), pygame.SRCALPHA)
+            overlay = pygame.Surface((game_width, memory_overlay_h), pygame.SRCALPHA)  # type: ignore[attr-defined]
             overlay.fill((20, 0, 0, 60))
             self.renderer.surface.blit(overlay, (0, horizon_y))
         pygame.draw.line(self.renderer.surface, COLOR_NEON_CYAN, (0, horizon_y), (game_width, horizon_y), 1)
@@ -303,8 +312,8 @@ class MemoryRacerEnv(gym.Env):
         
         # Game Over overlay
         if hasattr(self, "game_over") and self.game_over:
-             msg = "CRASHED!" if self.score < 0 else "TIME UP"
-             self.renderer.draw_text(msg, game_width//2, game_height//2, COLOR_RED, center=True, size=60)
+            msg = "CRASHED!" if self.score < 0 else "TIME UP"
+            self.renderer.draw_text(msg, game_width//2, game_height//2, COLOR_RED, center=True, size=60)
 
         self.renderer.draw_scanlines()
         
