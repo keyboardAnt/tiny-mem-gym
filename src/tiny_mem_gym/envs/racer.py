@@ -43,12 +43,13 @@ class MemoryRacerEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
         
         # Observation:
-        # Simplified grid: 20 rows x n_lanes
+        # Two-channel grid: warnings (far) + memory/hidden zone markers
         self.grid_height = 20
         self.observation_space = spaces.Box(
-            low=0, high=1,
-            shape=(self.grid_height, self.n_lanes),
-            dtype=np.float32
+            low=0,
+            high=1,
+            shape=(self.grid_height, self.n_lanes, 2),
+            dtype=np.float32,
         )
         
         self.renderer = None
@@ -65,12 +66,9 @@ class MemoryRacerEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         if options:
-            if "n_lanes" in options:
-                self.n_lanes = options["n_lanes"]
-                self.observation_space = spaces.Box(
-                    low=0, high=1,
-                    shape=(self.grid_height, self.n_lanes),
-                    dtype=np.float32
+            if "n_lanes" in options and options["n_lanes"] != self.n_lanes:
+                raise ValueError(
+                    "n_lanes is fixed after initialization; create a new env for a different lane count."
                 )
             if "obs_depth" in options:
                 self.obs_depth = options["obs_depth"]
@@ -154,18 +152,33 @@ class MemoryRacerEnv(gym.Env):
         if self.render_mode == "human":
             self.render()
             
-        return self._get_obs(), reward, terminated, truncated, {"success": self.score > 500}
+        info = {
+            "success": bool(truncated and not terminated),
+            "distance": self.timer,
+            "collided": terminated,
+        }
+        return self._get_obs(), reward, terminated, truncated, info
 
     def _get_obs(self):
-        obs = np.zeros((self.grid_height, self.n_lanes), dtype=np.float32)
+        obs = np.zeros((self.grid_height, self.n_lanes, 2), dtype=np.float32)
         bin_size = self.obs_depth / self.grid_height
         visible_threshold = self.obs_depth // 2
         
+        # Channel 0: far warnings (visible zone)
+        # Channel 1: remembered / hidden zone markers (including near obstacles)
         for lane, dist in self.obstacles:
+            row = int(dist / bin_size)
+            row = max(0, min(self.grid_height - 1, row))
             if dist > visible_threshold:
-                row = int(dist / bin_size)
-                if 0 <= row < self.grid_height:
-                    obs[row, lane] = 1.0
+                obs[row, lane, 0] = 1.0
+            else:
+                obs[row, lane, 1] = 1.0
+        
+        for lane, dist in self.memory_marks:
+            row = int(dist / bin_size)
+            row = max(0, min(self.grid_height - 1, row))
+            obs[row, lane, 1] = max(obs[row, lane, 1], 0.6)  # ghost hint
+        
         return obs
 
     def close(self):

@@ -28,8 +28,8 @@ class CyberHackingEnv(gym.Env):
         self,
         grid_size: int = 3,
         sequence_length: int = 4,
-        display_time: int = 60, # Steps to show sequence
-        max_steps: int = 200,   # Total steps allowed
+        display_time: int = 60,  # Steps to show sequence
+        max_steps: int = 200,    # Input steps allowed (excludes watch phase)
         render_mode: str | None = None,
     ) -> None:
         super().__init__()
@@ -48,9 +48,10 @@ class CyberHackingEnv(gym.Env):
         # 0: Highlighted Node (Sequence or Input)
         # 1: Completed Nodes
         self.observation_space = spaces.Box(
-            low=0, high=1,
+            low=0,
+            high=1,
             shape=(grid_size, grid_size, 2),
-            dtype=np.float32
+            dtype=np.float32,
         )
         
         self.renderer = None
@@ -58,26 +59,26 @@ class CyberHackingEnv(gym.Env):
         self.clock = None
         
         self.sequence = []
-        self.current_step = 0 # In sequence
-        self.timer = 0
-        self.phase = "watch" # "watch", "input"
+        self.current_step = 0  # In sequence
+        self.watch_timer = 0
+        self.input_timer = 0
+        self.phase = "watch"  # "watch", "input"
         self.game_over = False
         self.message = ""
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         if options:
-            if "grid_size" in options:
-                self.grid_size = options["grid_size"]
-                self.n_nodes = self.grid_size * self.grid_size
-                self.action_space = spaces.Discrete(self.n_nodes)
-                self.observation_space = spaces.Box(
-                    low=0, high=1,
-                    shape=(self.grid_size, self.grid_size, 2),
-                    dtype=np.float32
+            if "grid_size" in options and options["grid_size"] != self.grid_size:
+                raise ValueError(
+                    "grid_size is fixed after initialization; create a new env for a different size."
                 )
             if "sequence_length" in options:
                 self.sequence_length = options["sequence_length"]
+            if "display_time" in options:
+                self.display_time = options["display_time"]
+            if "max_steps" in options:
+                self.max_steps = options["max_steps"]
 
         # Generate Sequence
         # Allow repeats? Yes, why not.
@@ -87,7 +88,8 @@ class CyberHackingEnv(gym.Env):
         ]
         
         self.current_step = 0
-        self.timer = 0
+        self.watch_timer = 0
+        self.input_timer = 0
         self.phase = "watch"
         self.game_over = False
         self.message = ""
@@ -102,35 +104,29 @@ class CyberHackingEnv(gym.Env):
         terminated = False
         truncated = False
         
-        self.timer += 1
-        if self.timer >= self.max_steps:
-            truncated = True
-            self.game_over = True
-            self.message = "TIMEOUT"
+        if self.phase == "watch":
+            self.watch_timer += 1
+            if self.watch_timer >= self.display_time:
+                self.phase = "input"
+            # Ignore actions during watch; no truncation here
+        else:
+            self.input_timer += 1
+            if self.input_timer >= self.max_steps:
+                truncated = True
+                self.game_over = True
+                self.message = "TIMEOUT"
             
-        if not (terminated or truncated):
-            if self.phase == "watch":
-                # Wait for display_time
-                if self.timer >= self.display_time:
-                    self.phase = "input"
-                    # self.timer = 0 # Keep global timer
-                
-                # Action ignored in watch phase
-                pass
-                
-            elif self.phase == "input":
-                # Check input
+            if not truncated:
                 expected = self.sequence[self.current_step]
                 if action == expected:
                     reward = 1.0
                     self.current_step += 1
                     if self.current_step >= len(self.sequence):
                         terminated = True
-                        reward = 10.0 # Bonus
+                        reward = 10.0  # Bonus
                         self.game_over = True
                         self.message = "HACKED!"
                 else:
-                    # Wrong!
                     reward = -1.0
                     terminated = True
                     self.game_over = True
@@ -150,8 +146,9 @@ class CyberHackingEnv(gym.Env):
             # Show sequence based on time
             # Divide display_time into slots
             steps_per_node = self.display_time // len(self.sequence)
-            if steps_per_node < 1: steps_per_node = 1
-            idx = self.timer // steps_per_node
+            if steps_per_node < 1:
+                steps_per_node = 1
+            idx = self.watch_timer // steps_per_node
             
             if 0 <= idx < len(self.sequence):
                 active_node = self.sequence[idx]
@@ -226,8 +223,9 @@ class CyberHackingEnv(gym.Env):
             
             if self.phase == "watch":
                 steps_per_node = self.display_time // len(self.sequence)
-                if steps_per_node < 1: steps_per_node = 1
-                seq_idx = self.timer // steps_per_node
+                if steps_per_node < 1:
+                    steps_per_node = 1
+                seq_idx = self.watch_timer // steps_per_node
                 
                 if seq_idx < len(self.sequence) and self.sequence[seq_idx] == idx:
                     is_active = True
@@ -267,7 +265,7 @@ class CyberHackingEnv(gym.Env):
         self.renderer.draw_text(status, game_size//2, 50, color, center=True, size=30)
         # Beat/progress bar for rhythm and clarity
         if self.phase == "watch":
-            ratio = min(1.0, self.timer / max(1, self.display_time))
+            ratio = min(1.0, self.watch_timer / max(1, self.display_time))
         else:
             ratio = 0.0
         bar_w = int(game_size * 0.6)

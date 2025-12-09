@@ -143,12 +143,9 @@ class DungeonEscapeEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         if options:
-            if "grid_size" in options:
-                self.grid_size = options["grid_size"]
-                self.observation_space = spaces.Box(
-                    low=0, high=1, 
-                    shape=(self.grid_size, self.grid_size, 4), 
-                    dtype=np.float32
+            if "grid_size" in options and options["grid_size"] != self.grid_size:
+                raise ValueError(
+                    "grid_size is fixed after initialization; create a new env for a different size."
                 )
             if "memorization_time" in options:
                 self.memorization_time = options["memorization_time"]
@@ -173,11 +170,13 @@ class DungeonEscapeEnv(gym.Env):
         self.timer += 1
         
         if self.phase == "mem":
-            if self.timer >= self.memorization_time:
+            if action == 4:
                 self.phase = "act"
-                self.timer = 0 # Reset timer for step limit in act phase
+                self.timer = 0
+            elif self.timer >= self.memorization_time:
+                self.phase = "act"
+                self.timer = 0  # Reset timer for step limit in act phase
             # During mem phase, agent cannot move
-            pass
         else:
             # Act phase
             if self.timer >= self.max_steps:
@@ -200,13 +199,11 @@ class DungeonEscapeEnv(gym.Env):
             if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
                 tile = self.map[nr, nc]
                 if tile == self.WALL:
-                    reward = -1.0
-                    terminated = True # Crash = Die
-                    self.game_over = True
-                    self.message = "HIT WALL"
+                    reward = -0.1
+                    self.message = "BUMPED WALL"
                 elif tile == self.TRAP:
                     reward = -1.0
-                    terminated = True # Trap = Die
+                    terminated = True  # Trap = Die
                     self.game_over = True
                     self.message = "TRAPPED"
                 elif tile == self.EXIT:
@@ -218,14 +215,11 @@ class DungeonEscapeEnv(gym.Env):
                 else:
                     self.agent_pos = [nr, nc]
                     self.trail.append((nr, nc))
-                    # Small step penalty to encourage speed
-                    reward = -0.01
+                    reward = -0.01  # Small step penalty to encourage speed
             else:
-                 # Out of bounds
-                 reward = -1.0
-                 terminated = True
-                 self.game_over = True
-                 self.message = "VOID"
+                 # Out of bounds behaves like a wall bump
+                 reward = -0.1
+                 self.message = "BUMPED WALL"
 
         if self.render_mode == "human":
             self.render()
@@ -236,24 +230,45 @@ class DungeonEscapeEnv(gym.Env):
         # Shape: (H, W, 4) -> Walls, Traps, Agent, Exit
         obs = np.zeros((self.grid_size, self.grid_size, 4), dtype=np.float32)
         
-        visible = (self.phase == "mem")
+        visible = (self.phase == "mem") or self.game_over
+        agent_r, agent_c = self.agent_pos
         
         # Layer 0: Walls
         if visible:
             obs[:, :, 0] = (self.map == self.WALL).astype(np.float32)
+        else:
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    nr, nc = agent_r + dr, agent_c + dc
+                    if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
+                        if self.map[nr, nc] == self.WALL:
+                            obs[nr, nc, 0] = 1.0
         
         # Layer 1: Traps
         if visible:
             obs[:, :, 1] = (self.map == self.TRAP).astype(np.float32)
+        else:
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    nr, nc = agent_r + dr, agent_c + dc
+                    if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
+                        if self.map[nr, nc] == self.TRAP:
+                            obs[nr, nc, 1] = 1.0
             
         # Layer 2: Agent (Always visible to self)
-        r, c = self.agent_pos
-        obs[r, c, 2] = 1.0
+        obs[agent_r, agent_c, 2] = 1.0
         
         # Layer 3: Exit
         if visible:
             exit_r, exit_c = self.exit_pos
             obs[exit_r, exit_c, 3] = 1.0
+        else:
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    nr, nc = agent_r + dr, agent_c + dc
+                    if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
+                        if self.map[nr, nc] == self.EXIT:
+                            obs[nr, nc, 3] = 1.0
             
         return obs
 
@@ -280,6 +295,7 @@ class DungeonEscapeEnv(gym.Env):
         
         # If game over, show full map to explain death
         visible = (self.phase == "mem") or self.game_over
+        agent_r, agent_c = self.agent_pos
         
         # Draw Map
         for r in range(self.grid_size):
@@ -294,9 +310,10 @@ class DungeonEscapeEnv(gym.Env):
                 # If phase is act, we only see agent and maybe visited?
                 # For pure memory game: total darkness except agent.
                 
-                is_agent = (r == self.agent_pos[0] and c == self.agent_pos[1])
+                is_agent = (r == agent_r and c == agent_c)
+                in_local_view = (abs(r - agent_r) <= 1 and abs(c - agent_c) <= 1)
                 
-                if visible or is_agent:
+                if visible or is_agent or in_local_view:
                     if tile == self.WALL:
                         self.renderer.draw_box(rect, COLOR_GRID, filled=True)
                         pygame.draw.rect(self.renderer.surface, COLOR_NEON_AMBER, rect, 1)
@@ -312,11 +329,11 @@ class DungeonEscapeEnv(gym.Env):
                     self.renderer.draw_box(agent_rect, COLOR_NEON_CYAN, filled=True)
                     
                 # If hidden, maybe draw a faint grid and breadcrumbs for intuition
-                if not visible and not is_agent:
-                     pygame.draw.rect(self.renderer.surface, (20, 20, 20), rect, 1)
-                     if (r, c) in self.trail:
-                         crumb_rect = (x + cell_size//2 - 3, y + cell_size//2 - 3, 6, 6)
-                         self.renderer.draw_box(crumb_rect, COLOR_NEON_CYAN, filled=True, width=1)
+                if not visible and not is_agent and not in_local_view:
+                    pygame.draw.rect(self.renderer.surface, (20, 20, 20), rect, 1)
+                    if (r, c) in self.trail:
+                        crumb_rect = (x + cell_size//2 - 3, y + cell_size//2 - 3, 6, 6)
+                        self.renderer.draw_box(crumb_rect, COLOR_NEON_CYAN, filled=True, width=1)
 
         # UI Overlay in Game Area
         if self.game_over:

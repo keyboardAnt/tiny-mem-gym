@@ -6,10 +6,8 @@ Now features the new "Cool" environments.
 import argparse
 import sys
 import time
-import math
 
 import pygame
-import numpy as np
 
 import tiny_mem_gym
 from tiny_mem_gym.envs import DungeonEscapeEnv, MemoryRacerEnv, CyberHackingEnv
@@ -29,30 +27,22 @@ def make_env(name: str):
 def get_difficulty_options(env, level: int):
     """Return options dict for env.reset() based on level."""
     if isinstance(env, DungeonEscapeEnv):
-        # Increase grid size
-        base_size = 7
-        new_size = base_size + (level - 1)
-        # Decrease memorization time slightly?
+        # Keep grid size fixed to avoid changing observation shape; shorten mem time as level rises.
         base_mem = 60
         new_mem = max(10, base_mem - (level * 2))
-        return {"grid_size": new_size, "memorization_time": new_mem}
+        return {"memorization_time": new_mem}
         
     if isinstance(env, MemoryRacerEnv):
-        # Increase lanes or speed (speed is abstract in logic, handled by difficulty of reaction)
-        # Let's increase lanes every 3 levels
-        base_lanes = 3
-        new_lanes = min(5, base_lanes + (level // 3))
-        return {"n_lanes": new_lanes}
+        # Keep lane count fixed; increase speed modestly
+        base_speed = 1.0
+        new_speed = min(3.0, base_speed + (level - 1) * 0.2)
+        return {"speed": new_speed}
         
     if isinstance(env, CyberHackingEnv):
-        # Increase sequence length
+        # Increase sequence length; keep grid size fixed to avoid shape changes
         base_len = 4
         new_len = base_len + (level - 1)
-        # Increase grid size?
-        grid_size = 3
-        if level > 3: grid_size = 4
-        if level > 6: grid_size = 5
-        return {"sequence_length": new_len, "grid_size": grid_size}
+        return {"sequence_length": new_len}
         
     return {}
 

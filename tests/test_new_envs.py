@@ -28,7 +28,7 @@ def test_memory_racer():
     env = MemoryRacerEnv(n_lanes=3, obs_depth=100, max_steps=50, render_mode="rgb_array")
     obs, _ = env.reset(seed=0)
     assert env.observation_space.contains(obs)
-    assert obs.shape == (20, 3)
+    assert obs.shape == (20, 3, 2)
     
     # Run for a bit
     for _ in range(10):
