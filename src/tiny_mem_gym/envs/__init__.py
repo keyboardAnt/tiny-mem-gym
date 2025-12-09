@@ -1,16 +1,22 @@
-"""Tiny-mem-gym environment collection.
+from gymnasium.envs.registration import register
 
-Concrete environment implementations live in this subpackage.
-"""
+from tiny_mem_gym.envs.dungeon import DungeonEscapeEnv
+from tiny_mem_gym.envs.racer import MemoryRacerEnv
+from tiny_mem_gym.envs.hacking import CyberHackingEnv
 
-from .memory_bandit import TinyMemoryBanditEnv
-from .sequence_recall import SequenceRecallEnv
-from .gridworld import TinyPOGridworldEnv
-
-__all__ = [
-    "TinyMemoryBanditEnv",
-    "SequenceRecallEnv",
-    "TinyPOGridworldEnv",
-]
-
-
+def register_gymnasium_envs():
+    register(
+        id="TinyMemory-Dungeon-v0",
+        entry_point="tiny_mem_gym.envs.dungeon:DungeonEscapeEnv",
+        max_episode_steps=200,
+    )
+    register(
+        id="TinyMemory-Racer-v0",
+        entry_point="tiny_mem_gym.envs.racer:MemoryRacerEnv",
+        max_episode_steps=1000,
+    )
+    register(
+        id="TinyMemory-Hacking-v0",
+        entry_point="tiny_mem_gym.envs.hacking:CyberHackingEnv",
+        max_episode_steps=100,
+    )

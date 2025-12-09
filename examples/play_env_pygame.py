@@ -1,87 +1,145 @@
 """Interactive keyboard control for tiny-mem-gym environments using pygame.
 
-This script is intentionally lightweight and meant for quick manual play and
-visual inspection of the environments.
+Now features the new "Cool" environments.
 """
 
 import argparse
 import sys
+import time
+import math
 
 import pygame
+import numpy as np
 
 import tiny_mem_gym
-from tiny_mem_gym.envs import TinyMemoryBanditEnv, SequenceRecallEnv, TinyPOGridworldEnv
+from tiny_mem_gym.envs import DungeonEscapeEnv, MemoryRacerEnv, CyberHackingEnv
 
 
 def make_env(name: str):
     name = name.lower()
-    if name == "bandit":
-        return TinyMemoryBanditEnv()
-    if name in {"sequence", "sequence_recall"}:
-        return SequenceRecallEnv()
-    if name == "gridworld":
-        return TinyPOGridworldEnv()
+    if name in {"dungeon", "escape"}:
+        return DungeonEscapeEnv(render_mode="human")
+    if name in {"racer", "driving"}:
+        return MemoryRacerEnv(render_mode="human")
+    if name in {"hacking", "cyber"}:
+        return CyberHackingEnv(render_mode="human")
     raise ValueError(f"Unknown env name: {name!r}")
 
 
-def select_action(env, keys) -> int:
-    """Map keyboard state to a discrete action for the given env."""
-    # Gridworld: arrows move, staying still is a valid action.
-    if isinstance(env, TinyPOGridworldEnv):
-        if keys[pygame.K_UP]:
-            return 0
-        if keys[pygame.K_RIGHT]:
-            return 1
-        if keys[pygame.K_DOWN]:
-            return 2
-        if keys[pygame.K_LEFT]:
-            return 3
-        return 4  # stay
-
-    # Bandit: keys 1..n_arms select an arm, default to 0.
-    if isinstance(env, TinyMemoryBanditEnv):
-        for k, arm in (
-            (pygame.K_1, 0),
-            (pygame.K_2, 1),
-            (pygame.K_3, 2),
-            (pygame.K_4, 3),
-        ):
-            if arm < env.n_arms and keys[k]:
-                return arm
-        return 0
-
-    # Sequence recall: assume Discrete(n); keys 1..n select actions.
-    if isinstance(env, SequenceRecallEnv):
-        n = env.action_space.n
-        for idx, key in enumerate(
-            (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6)
-        ):
-            if idx < n and keys[key]:
-                return idx
-        return 0
-
-    # Fallback: random action.
-    return int(env.action_space.sample())
+def get_difficulty_options(env, level: int):
+    """Return options dict for env.reset() based on level."""
+    if isinstance(env, DungeonEscapeEnv):
+        # Increase grid size
+        base_size = 7
+        new_size = base_size + (level - 1)
+        # Decrease memorization time slightly?
+        base_mem = 60
+        new_mem = max(10, base_mem - (level * 2))
+        return {"grid_size": new_size, "memorization_time": new_mem}
+        
+    if isinstance(env, MemoryRacerEnv):
+        # Increase lanes or speed (speed is abstract in logic, handled by difficulty of reaction)
+        # Let's increase lanes every 3 levels
+        base_lanes = 3
+        new_lanes = min(5, base_lanes + (level // 3))
+        return {"n_lanes": new_lanes}
+        
+    if isinstance(env, CyberHackingEnv):
+        # Increase sequence length
+        base_len = 4
+        new_len = base_len + (level - 1)
+        # Increase grid size?
+        grid_size = 3
+        if level > 3: grid_size = 4
+        if level > 6: grid_size = 5
+        return {"sequence_length": new_len, "grid_size": grid_size}
+        
+    return {}
 
 
-def _wrap_text(line: str, font: pygame.font.Font, max_width: int) -> list[str]:
-    """Wrap a single line of text to fit within max_width pixels.
+def select_action(env, keys) -> int | None:
+    """Map keyboard state to action."""
+    
+    # Dungeon: Arrows to move, Wait (Space?)
+    if isinstance(env, DungeonEscapeEnv):
+        if keys[pygame.K_UP]: return 0
+        if keys[pygame.K_RIGHT]: return 1
+        if keys[pygame.K_DOWN]: return 2
+        if keys[pygame.K_LEFT]: return 3
+        if keys[pygame.K_SPACE]: return 4 # Wait
+        return None
 
-    This keeps instructions readable even in small windows.
-    """
-    words = line.split(" ")
-    lines: list[str] = []
-    current = ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if current and font.size(candidate)[0] > max_width:
-            lines.append(current)
-            current = word
-        else:
-            current = candidate
-    if current:
-        lines.append(current)
-    return lines
+    # Racer: Left/Right arrows
+    if isinstance(env, MemoryRacerEnv):
+        if keys[pygame.K_LEFT]: return 0 # Left
+        if keys[pygame.K_RIGHT]: return 2 # Right
+        # Default is Stay (1) if no key pressed?
+        # But for "Select Action" function we usually return non-None only on press.
+        # But Racer needs constant input (Stay is an action).
+        # We handle "Stay" in main loop if this returns None?
+        return None
+
+    # Hacking: Numpad/Grid keys?
+    # This is tricky for generic grid size.
+    # Let's map:
+    # 7 8 9
+    # 4 5 6
+    # 1 2 3
+    # To indices.
+    if isinstance(env, CyberHackingEnv):
+        # Map numpad to grid indices?
+        # Or just 1-9 top-left to bottom-right?
+        # 1 2 3
+        # 4 5 6
+        # 7 8 9
+        mapping = {
+            pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2,
+            pygame.K_4: 3, pygame.K_5: 4, pygame.K_6: 5,
+            pygame.K_7: 6, pygame.K_8: 7, pygame.K_9: 8,
+            pygame.K_q: 0, pygame.K_w: 1, pygame.K_e: 2,
+            pygame.K_a: 3, pygame.K_s: 4, pygame.K_d: 5,
+            pygame.K_z: 6, pygame.K_x: 7, pygame.K_c: 8,
+        }
+        
+        for k, v in mapping.items():
+            if keys[k] and v < env.action_space.n:
+                return v
+        return None
+
+    return None
+
+
+def show_level_screen(env, level):
+    """Show a simple level transition screen."""
+    if not hasattr(env.unwrapped, "renderer") or env.unwrapped.renderer is None:
+        return
+        
+    renderer = env.unwrapped.renderer
+    renderer.clear()
+    
+    cx, cy = renderer.width // 2, renderer.height // 2
+    renderer.draw_text(f"LEVEL {level}", cx, cy - 20, (255, 255, 255), center=True, size=40)
+    renderer.draw_text("PRESS SPACE", cx, cy + 30, (200, 200, 200), center=True, size=20)
+    renderer.draw_scanlines()
+    
+    if env.unwrapped.window:
+        env.unwrapped.window.blit(renderer.surface, (0, 0))
+        pygame.display.flip()
+        
+    waiting = True
+    clock = pygame.time.Clock()
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+                if event.key == pygame.K_SPACE:
+                    waiting = False
+        clock.tick(30)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -89,8 +147,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--env",
         type=str,
-        default="gridworld",
-        choices=["bandit", "sequence", "sequence_recall", "gridworld"],
+        default="dungeon",
+        choices=["dungeon", "racer", "hacking"],
         help="Which environment to play.",
     )
     args = parser.parse_args(argv)
@@ -98,96 +156,103 @@ def main(argv: list[str] | None = None) -> None:
     tiny_mem_gym.register_gymnasium_envs()
     env = make_env(args.env)
 
-    obs, info = env.reset()
-    reward: float = 0.0
-    episode_done = False
-
-    pygame.init()
-    pygame.font.init()
-    # Use a modest default window size and scale the frame to fit.
-    window_width, window_height = 256, 256
-    screen = pygame.display.set_mode((window_width, window_height))
-    pygame.display.set_caption(f"tiny-mem-gym: {env.__class__.__name__}")
-    clock = pygame.time.Clock()
-    font = pygame.font.Font(None, 16)
-
     running = True
+    level = 1
+    
+    last_action_time = 0
+    action_cooldown = 0.15 
+
     while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+        show_level_screen(env, level)
+        
+        options = get_difficulty_options(env.unwrapped, level)
+        obs, info = env.reset(options=options)
+        
+        episode_done = False
+        success = False
+        
+        while not episode_done and running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                if event.type == pygame.KEYDOWN:
+                     if event.key == pygame.K_ESCAPE:
+                         running = False
 
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_ESCAPE]:
-            running = False
-            continue
+            if not running:
+                break
 
-        # If an episode has finished, wait for SPACE before starting the next
-        # one so humans have time to read the outcome.
-        if episode_done and keys[pygame.K_SPACE]:
-            obs, info = env.reset()
-            reward = 0.0
-            episode_done = False
-
-        if not episode_done:
+            env.render()
+            
+            current_time = time.time()
+            keys = pygame.key.get_pressed()
             action = select_action(env, keys)
-            obs, reward, terminated, truncated, info = env.step(action)
-            episode_done = terminated or truncated
-        else:
-            terminated = False
-            truncated = False
+            
+            step_taken = False
+            
+            # Environment Specific Loop Logic
+            if isinstance(env.unwrapped, DungeonEscapeEnv):
+                # Turn based
+                if action is not None:
+                    if current_time - last_action_time > action_cooldown:
+                        obs, reward, terminated, truncated, info = env.step(action)
+                        episode_done = terminated or truncated
+                        success = info.get("success", False)
+                        last_action_time = current_time
+                else:
+                    # Auto-tick needed for timer?
+                    # The env tracks memorization time in steps.
+                    # So we need to call step even if waiting?
+                    # DungeonEscapeEnv logic: step increments timer.
+                    # If phase is "mem", step(action) ignores action but ticks timer.
+                    # So we should auto-step if phase is "mem".
+                    if env.unwrapped.phase == "mem":
+                        if current_time - last_action_time > 0.05: # Fast forward memorization
+                            env.step(4) # Wait
+                            last_action_time = current_time
+            
+            elif isinstance(env.unwrapped, MemoryRacerEnv):
+                # Real-time
+                # If no key, Action 1 (Stay)
+                effective_action = action if action is not None else 1
+                
+                # Slower tick for game loop
+                if current_time - last_action_time > 0.1: # 10 steps per sec
+                    obs, reward, terminated, truncated, info = env.step(effective_action)
+                    episode_done = terminated or truncated
+                    success = info.get("success", False)
+                    last_action_time = current_time
+                    
+            elif isinstance(env.unwrapped, CyberHackingEnv):
+                # Watch Phase = Auto tick
+                if env.unwrapped.phase == "watch":
+                     if current_time - last_action_time > 0.05:
+                         env.step(0)
+                         last_action_time = current_time
+                # Input Phase = Turn based
+                elif action is not None:
+                    if current_time - last_action_time > 0.2:
+                        obs, reward, terminated, truncated, info = env.step(action)
+                        episode_done = terminated or truncated
+                        success = info.get("success", False)
+                        last_action_time = current_time
+            
+            # env.unwrapped.clock.tick(60) # Handled in render
 
-        # Render current frame and display in the window.
-        frame = env.render()  # H x W x 3 uint8
-        # Scale frame to the window size for convenience.
-        surf = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
-        surf = pygame.transform.smoothscale(surf, (window_width, window_height))
-        screen.blit(surf, (0, 0))
-
-        # Overlay simple HUD with cost and controls to make the games
-        # understandable and fun for humans.
-        display_cost = -float(reward)
-        hud_lines = []
-        hud_lines.append(f"Step cost: {display_cost:.2f}")
-        if isinstance(env, TinyMemoryBanditEnv):
-            hud_lines.append("Bandit: at the start one green column flashes = winning arm.")
-            hud_lines.append("Press 1-4 to choose an arm; middle strip green = correct, red = miss.")
-        elif isinstance(env, SequenceRecallEnv):
-            hud_lines.append(
-                f"Sequence (n-back={getattr(env, 'n_back', 1)}): "
-                "blue = watch the color sequence (no keys)."
-            )
-            hud_lines.append("Yellow = answer: press 1-4 for the color from n steps ago; bottom bar green = correct.")
-        elif isinstance(env, TinyPOGridworldEnv):
-            hud_lines.append("Gridworld: you are the red square; green square is the goal.")
-            hud_lines.append("Move with arrow keys to reach the goal before steps run out.")
-        if episode_done:
-            total_cost = -float(info.get("cumulative_reward", 0.0))
-            success = bool(info.get("success"))
-            hud_lines.append("Episode complete!")
-            hud_lines.append(f"Total cost this episode: {total_cost:.2f}")
-            hud_lines.append(f"Status: {'success' if success else 'not successful yet'}")
-            hud_lines.append("Press SPACE for next episode.")
-
-        hud_lines.append("Esc: quit game")
-
-        y = 4
-        max_text_width = window_width - 8
-        for base_line in hud_lines:
-            for line in _wrap_text(base_line, font, max_text_width):
-                text_surf = font.render(line, True, (255, 255, 255))
-                screen.blit(text_surf, (4, y))
-                y += text_surf.get_height() + 2
-
-        pygame.display.flip()
-
-        clock.tick(30)
-
+        if running:
+            env.render()
+            
+            # If success, brief pause.
+            # If fail, long pause (to see reason).
+            if success:
+                pygame.time.wait(1000)
+                level += 1
+            else:
+                pygame.time.wait(2500) # Wait 2.5s to see why you failed
+                pass 
+                
     env.close()
-    pygame.quit()
 
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-
-

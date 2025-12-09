@@ -18,6 +18,12 @@ With `uv`:
 uv sync
 ```
 
+With the Makefile helper:
+
+```bash
+make install
+```
+
 Or with `pip` in editable mode:
 
 ```bash
@@ -53,6 +59,14 @@ tiny_mem_gym.register_gymnasium_envs()
 env = gym.make("TinyMem-Bandit-v0")
 ```
 
+### Interactive play
+
+Launch the pygame-powered keyboard demo (requires the `viz` extras for `pygame`):
+
+```bash
+make play ENV=dungeon   # options: dungeon, racer, hacking
+```
+
 ### Environments
 
 - **Memory bandits**: an initial cue reveals the rewarding arm, which must be remembered over several timesteps.
@@ -69,6 +83,12 @@ Run the pytest-based smoke tests:
 uv run pytest
 ```
 
+Or via the Makefile (pass `PYTEST_ARGS=...` to filter):
+
+```bash
+make test
+```
+
 ### Building and publishing
 
 To build distributions with `uv`:
@@ -77,10 +97,22 @@ To build distributions with `uv`:
 uv build
 ```
 
+Or with the Makefile:
+
+```bash
+make build
+```
+
 To publish to the configured index (for example, PyPI):
 
 ```bash
 uv publish
+```
+
+Or with the Makefile:
+
+```bash
+make publish
 ```
 
 Before publishing, update the package version using:
