@@ -39,6 +39,7 @@ class MemoryRacerEnv(gym.Env):
         self.n_lanes = n_lanes
         self.obs_depth = obs_depth
         self.speed = speed
+        self.spawn_prob = 0.1
         self.max_steps = max_steps
         self.render_mode = render_mode
         
@@ -65,6 +66,7 @@ class MemoryRacerEnv(gym.Env):
         self.score = 0
         self.timer = 0
         self.game_over = False
+        self._gap_distance = 15  # ensure at least one lane is free within this range
         
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -77,6 +79,8 @@ class MemoryRacerEnv(gym.Env):
                 self.obs_depth = options["obs_depth"]
             if "speed" in options:
                 self.speed = options["speed"]
+            if "spawn_prob" in options:
+                self.spawn_prob = options["spawn_prob"]
         
         self.car_lane = self.n_lanes // 2
         self.obstacles = []
@@ -140,17 +144,21 @@ class MemoryRacerEnv(gym.Env):
             self.memory_marks = new_memory_marks
             
             # Spawn new obstacles
-            if self.np_random.random() < 0.1:
+            if self.np_random.random() < self.spawn_prob:
                 lane = self.np_random.integers(0, self.n_lanes)
                 dist = self.obs_depth
                 # Check collision at spawn
                 free = True
-                for l, d in self.obstacles:
-                    if l == lane and d > self.obs_depth - 10:
+                for lane_existing, dist_existing in self.obstacles:
+                    if lane_existing == lane and dist_existing > self.obs_depth - 10:
                         free = False
                         break
                 if free:
                     self.obstacles.append([lane, dist])
+            
+            # Ensure solvable: always leave at least one lane free within the near window
+            if not terminated:
+                self._ensure_escape_gap()
             
             if not terminated:
                 reward = 0.1
@@ -188,6 +196,23 @@ class MemoryRacerEnv(gym.Env):
             obs[row, lane, 1] = max(obs[row, lane, 1], 0.6)  # ghost hint
         
         return obs
+
+    def _ensure_escape_gap(self):
+        """Prevent unsolvable states: keep at least one lane free in the near zone."""
+        near_indices = [
+            (idx, lane, dist)
+            for idx, (lane, dist) in enumerate(self.obstacles)
+            if dist < self._gap_distance
+        ]
+        if len({lane for _, lane, _ in near_indices}) == self.n_lanes:
+            # Remove the farthest obstacle among the near ones to open a lane
+            remove_idx, remove_lane, _ = max(near_indices, key=lambda x: x[2])
+            self.obstacles.pop(remove_idx)
+            # Drop matching memory marks in the near zone for that lane
+            self.memory_marks = [
+                (lane, dist) for (lane, dist) in self.memory_marks
+                if not (lane == remove_lane and dist < self._gap_distance)
+            ]
 
     def close(self):
         if self.window:
@@ -306,9 +331,6 @@ class MemoryRacerEnv(gym.Env):
         
         # Status HUD
         self.renderer.draw_text(f"SCORE {self.score}", 10, 10, COLOR_NEON_PINK, size=18)
-        if not self.game_over:
-            time_left = max(0, self.max_steps - self.timer)
-            self.renderer.draw_text(f"FOCUS {time_left}", game_width - 120, 10, COLOR_NEON_AMBER, size=18)
         
         # Game Over overlay
         if hasattr(self, "game_over") and self.game_over:

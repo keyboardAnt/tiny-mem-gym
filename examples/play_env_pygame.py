@@ -9,6 +9,9 @@ import time
 
 import pygame
 
+# pygame stubs are incomplete; silence missing-member noise and compact single-line ifs
+# pylint: disable=no-member,multiple-statements
+
 import tiny_mem_gym
 from tiny_mem_gym.envs import DungeonEscapeEnv, MemoryRacerEnv, CyberHackingEnv
 
@@ -33,10 +36,12 @@ def get_difficulty_options(env, level: int):
         return {"memorization_time": new_mem}
         
     if isinstance(env, MemoryRacerEnv):
-        # Keep lane count fixed; increase speed modestly
-        base_speed = 1.0
-        new_speed = min(3.0, base_speed + (level - 1) * 0.2)
-        return {"speed": new_speed}
+        # Keep lane count fixed; start gentle and ramp both speed and spawn rate slowly
+        base_speed = 0.6
+        speed = min(2.0, base_speed + (level - 1) * 0.2)
+        base_spawn = 0.05
+        spawn_prob = min(0.1, base_spawn + (level - 1) * 0.01)
+        return {"speed": speed, "spawn_prob": spawn_prob}
         
     if isinstance(env, CyberHackingEnv):
         # Increase sequence length; keep grid size fixed to avoid shape changes
@@ -52,17 +57,24 @@ def select_action(env, keys) -> int | None:
     
     # Dungeon: Arrows to move, Wait (Space?)
     if isinstance(env, DungeonEscapeEnv):
-        if keys[pygame.K_UP]: return 0
-        if keys[pygame.K_RIGHT]: return 1
-        if keys[pygame.K_DOWN]: return 2
-        if keys[pygame.K_LEFT]: return 3
-        if keys[pygame.K_SPACE]: return 4 # Wait
+        if keys[pygame.K_UP]:
+            return 0
+        if keys[pygame.K_RIGHT]:
+            return 1
+        if keys[pygame.K_DOWN]:
+            return 2
+        if keys[pygame.K_LEFT]:
+            return 3
+        if keys[pygame.K_SPACE]:
+            return 4  # Wait
         return None
 
     # Racer: Left/Right arrows
     if isinstance(env, MemoryRacerEnv):
-        if keys[pygame.K_LEFT]: return 0 # Left
-        if keys[pygame.K_RIGHT]: return 2 # Right
+        if keys[pygame.K_LEFT]:
+            return 0  # Left
+        if keys[pygame.K_RIGHT]:
+            return 2  # Right
         # Default is Stay (1) if no key pressed?
         # But for "Select Action" function we usually return non-None only on press.
         # But Racer needs constant input (Stay is an action).
@@ -156,7 +168,7 @@ def main(argv: list[str] | None = None) -> None:
         show_level_screen(env, level)
         
         options = get_difficulty_options(env.unwrapped, level)
-        obs, info = env.reset(options=options)
+        _obs, _info = env.reset(options=options)
         
         episode_done = False
         success = False
@@ -166,8 +178,8 @@ def main(argv: list[str] | None = None) -> None:
                 if event.type == pygame.QUIT:
                     running = False
                 if event.type == pygame.KEYDOWN:
-                     if event.key == pygame.K_ESCAPE:
-                         running = False
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
 
             if not running:
                 break
@@ -178,14 +190,12 @@ def main(argv: list[str] | None = None) -> None:
             keys = pygame.key.get_pressed()
             action = select_action(env, keys)
             
-            step_taken = False
-            
             # Environment Specific Loop Logic
             if isinstance(env.unwrapped, DungeonEscapeEnv):
                 # Turn based
                 if action is not None:
                     if current_time - last_action_time > action_cooldown:
-                        obs, reward, terminated, truncated, info = env.step(action)
+                        _obs, _reward, terminated, truncated, info = env.step(action)
                         episode_done = terminated or truncated
                         success = info.get("success", False)
                         last_action_time = current_time
@@ -208,7 +218,7 @@ def main(argv: list[str] | None = None) -> None:
                 
                 # Slower tick for game loop
                 if current_time - last_action_time > 0.1: # 10 steps per sec
-                    obs, reward, terminated, truncated, info = env.step(effective_action)
+                    _obs, _reward, terminated, truncated, info = env.step(effective_action)
                     episode_done = terminated or truncated
                     success = info.get("success", False)
                     last_action_time = current_time
@@ -216,13 +226,13 @@ def main(argv: list[str] | None = None) -> None:
             elif isinstance(env.unwrapped, CyberHackingEnv):
                 # Watch Phase = Auto tick
                 if env.unwrapped.phase == "watch":
-                     if current_time - last_action_time > 0.05:
-                         env.step(0)
-                         last_action_time = current_time
+                    if current_time - last_action_time > 0.05:
+                        env.step(0)
+                        last_action_time = current_time
                 # Input Phase = Turn based
                 elif action is not None:
                     if current_time - last_action_time > 0.2:
-                        obs, reward, terminated, truncated, info = env.step(action)
+                        _obs, _reward, terminated, truncated, info = env.step(action)
                         episode_done = terminated or truncated
                         success = info.get("success", False)
                         last_action_time = current_time
@@ -239,7 +249,6 @@ def main(argv: list[str] | None = None) -> None:
                 level += 1
             else:
                 pygame.time.wait(2500) # Wait 2.5s to see why you failed
-                pass 
                 
     env.close()
 
